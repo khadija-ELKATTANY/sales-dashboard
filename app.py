@@ -4,6 +4,7 @@ import sqlite3
 import plotly.express as px
 import os
 import urllib.request
+from io import BytesIO
 
 # ---------- Download and build database if missing ----------
 def ensure_database():
@@ -11,28 +12,30 @@ def ensure_database():
     db_path = os.path.join(script_dir, 'dataset', 'myapp.db')
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    # Check if the database exists and has the 'sales' table
     if not os.path.exists(db_path):
         st.warning("🔄 Database not found. Building from scratch... This may take a few minutes.")
-        # Download the CSV from UCI (or any stable mirror)
-        url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00352/Online%20Retail.xlsx"
-        # Actually, the CSV is easier: we can use a direct CSV link, but the original is XLSX.
-        # We'll use the original CSV from the repository (if you have a direct link)
-        # For this example, we'll use a temporary fallback: you can host the CSV elsewhere.
-        # I'll provide a working URL.
-        # Since the original file is large, we'll use the cleaned version you have locally? 
-        # But we want a public URL. Let's use the one from Kaggle? Not ideal.
-        # Alternative: we store the CSV on a public GitHub release or use a direct download from UCI.
-        # For now, I'll use the URL from a mirror:
-        csv_url = "https://raw.githubusercontent.com/khadija-ELKATTANY/sales-dashboard/main/dataset/online_retail_II.csv"
-        # If that fails, we can fall back to a known mirror.
+        
+        # Download the Excel file directly from UCI
+        url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00502/online_retail_II.xlsx"
+        
         try:
-            df = pd.read_csv(csv_url, encoding='latin1')
+            # Download the file
+            with urllib.request.urlopen(url) as response:
+                excel_data = response.read()
+            
+            # Read both sheets and combine them
+            xls = pd.ExcelFile(BytesIO(excel_data))
+            df1 = pd.read_excel(xls, sheet_name="Year 2009-2010")
+            df2 = pd.read_excel(xls, sheet_name="Year 2010-2011")
+            df = pd.concat([df1, df2], ignore_index=True)
+            
+            st.info(f"✅ Downloaded and combined {len(df)} rows from Excel.")
+            
         except Exception as e:
-            st.error(f"Could not download CSV from {csv_url}. Please check the URL or upload the CSV manually.")
+            st.error(f"❌ Failed to download dataset: {str(e)}")
             st.stop()
 
-        # Clean and engineer features (same as local)
+        # Clean and engineer features
         df.dropna(subset=['Customer ID'], inplace=True)
         df = df[df['Quantity'] > 0]
         df['TotalPrice'] = df['Quantity'] * df['Price']
@@ -56,9 +59,7 @@ def ensure_database():
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sales'")
         if not cursor.fetchone():
             conn.close()
-            os.remove(db_path)  # remove the empty/corrupt file
-            st.warning("🔄 Existing database missing table. Rebuilding...")
-            # Re-run the creation process (recursive call is risky, so we just call the function again after deletion)
+            os.remove(db_path)
             return ensure_database()
         conn.close()
     return db_path
