@@ -4,6 +4,50 @@ import sqlite3
 import plotly.express as px
 import os
 
+
+
+# ---------- AUTO-CREATE DATABASE IF MISSING ----------
+def ensure_database():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(script_dir, 'dataset', 'myapp.db')
+    
+    # If database doesn't exist, create it from CSV
+    if not os.path.exists(db_path):
+        print("🔄 Database not found. Creating from CSV...")
+        csv_path = os.path.join(script_dir, 'dataset', 'online_retail_cleaned.csv')
+        
+        if not os.path.exists(csv_path):
+            # If cleaned CSV doesn't exist, use original
+            csv_path = os.path.join(script_dir, 'dataset', 'online_retail_II.csv')
+        
+        try:
+            # Load CSV and create database
+            df = pd.read_csv(csv_path)
+            
+            # Feature engineering (recreate columns)
+            df['TotalPrice'] = df['Quantity'] * df['Price']
+            df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
+            df['Month'] = df['InvoiceDate'].dt.month
+            df['Monthname'] = df['InvoiceDate'].dt.month_name()
+            df['Weekday'] = df['InvoiceDate'].dt.day_name()
+            df['Hour'] = df['InvoiceDate'].dt.hour
+            df['Year'] = df['InvoiceDate'].dt.year
+            
+            # Create database
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            conn = sqlite3.connect(db_path)
+            df.to_sql('sales', conn, if_exists='replace', index=False)
+            conn.close()
+            print("✅ Database created successfully!")
+        except Exception as e:
+            print(f"❌ Failed to create database: {e}")
+    
+    return db_path
+
+# Call this before any queries
+db_path = ensure_database()
+
+
 # ---------- Page Configuration ----------
 st.set_page_config(
     page_title="Retail Sales Dashboard",
