@@ -210,3 +210,75 @@ with st.expander("📋 View Raw Data"):
     raw_query = f"SELECT * FROM sales {where_clause} LIMIT 100"
     raw_df = load_data(raw_query)
     st.dataframe(raw_df)
+
+
+# ---------- RFM CUSTOMER SEGMENTATION ----------
+st.divider()
+st.header("🧑‍🤝‍🧑 Customer Segmentation (RFM Analysis)")
+
+@st.cache_data
+def load_rfm():
+    # Use the CSV we just created (or query the database again)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    rfm_path = os.path.join(script_dir, 'rfm_results.csv')
+    
+    if os.path.exists(rfm_path):
+        return pd.read_csv(rfm_path)
+    else:
+        # Fallback: query the database and calculate RFM on the fly
+        conn = sqlite3.connect(db_path)
+        query = """
+        SELECT 
+            "Customer ID" as Customer_ID,
+            MAX(InvoiceDate) AS LastPurchaseDate,
+            COUNT(DISTINCT Invoice) AS Frequency,
+            SUM(TotalPrice) AS Monetary
+        FROM sales
+        GROUP BY "Customer ID"
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        
+        df['LastPurchaseDate'] = pd.to_datetime(df['LastPurchaseDate'])
+        latest_date = df['LastPurchaseDate'].max()
+        df['Recency'] = (latest_date - df['LastPurchaseDate']).dt.days
+        
+        df['R_Score'] = pd.qcut(df['Recency'], 5, labels=[5, 4, 3, 2, 1])
+        df['F_Score'] = pd.qcut(df['Frequency'].rank(method='first'), 5, labels=[1, 2, 3, 4, 5])
+        df['M_Score'] = pd.qcut(df['Monetary'], 5, labels=[1, 2, 3, 4, 5])
+        
+        def seg(row):
+            if row['R_Score'] >= 4 and row['F_Score'] >= 4 and row['M_Score'] >= 4:
+                return '👑 Champions'
+            elif row['R_Score'] >= 3 and row['F_Score'] >= 3 and row['M_Score'] >= 3:
+                return '💎 Loyal Customers'
+            elif row['R_Score'] >= 2 and row['F_Score'] >= 2 and row['M_Score'] >= 2:
+                return '📈 Potential Loyalists'
+            elif row['R_Score'] <= 2 and row['F_Score'] >= 3 and row['M_Score'] >= 3:
+                return '⚠️ At Risk'
+            else:
+                return '💤 Lost / Need Attention'
+        
+        df['Segment'] = df.apply(seg, axis=1)
+        return df
+
+rfm_df = load_rfm()
+
+# Show segment counts
+seg_counts = rfm_df['Segment'].value_counts().reset_index()
+seg_counts.columns = ['Segment', 'Count']
+
+fig_rfm = px.bar(
+    seg_counts,
+    x='Segment',
+    y='Count',
+    title='👥 Customer Segment Distribution',
+    color='Segment',
+    color_discrete_sequence=px.colors.qualitative.Set2
+)
+st.plotly_chart(fig_rfm, width='stretch')
+
+# Show top 10 customers by segment
+st.subheader("🏆 Top 10 Customers by Monetary Value")
+top_customers = rfm_df.nlargest(10, 'Monetary')[['Customer_ID', 'Segment', 'Monetary', 'Frequency', 'Recency']]
+st.dataframe(top_customers, width='stretch')
