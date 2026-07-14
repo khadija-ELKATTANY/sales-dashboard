@@ -305,16 +305,15 @@ st.dataframe(top_customers, width='stretch')
 
 
 
-#------------SALES FORECAST (Prophet)------------
+# ---------- SALES FORECAST (Prophet) ----------
 st.divider()
-st.header("🔮 Sales Forecasting (Next 30 Days)")
+st.header("📈 Sales Forecast (Next 30 Days)")
 
 @st.cache_data
 def run_forecast():
-    """Run Prophet forecast and return data"""
     conn = sqlite3.connect(db_path)
     query = """
- SELECT 
+    SELECT 
         DATE(InvoiceDate) as ds,
         SUM(TotalPrice) as y
     FROM sales
@@ -323,7 +322,6 @@ def run_forecast():
     """
     df = pd.read_sql_query(query, conn)
     conn.close()
-    
     df['ds'] = pd.to_datetime(df['ds'])
     
     try:
@@ -344,21 +342,20 @@ def run_forecast():
 forecast, model, history = run_forecast()
 
 if forecast is not None:
-    # Extract last 30 days of forecast
     forecast_30 = forecast.tail(30)
-    
-    # Show total predicted revenue
     total_forecast = forecast_30['yhat'].sum()
+    
+    # Metrics
     col1, col2 = st.columns(2)
     col1.metric("💰 Total Predicted (30 Days)", f"${total_forecast:,.0f}")
     col2.metric("📊 Avg Daily", f"${forecast_30['yhat'].mean():,.0f}")
     st.caption(f"📅 Forecast Period: {forecast_30['ds'].min().date()} to {forecast_30['ds'].max().date()}")
-    # Create plot
+    
+    # Plot
     import plotly.graph_objects as go
     
     fig = go.Figure()
     
-    # Historical data (last 90 days)
     hist_90 = history.tail(90)
     fig.add_trace(go.Scatter(
         x=hist_90['ds'], 
@@ -368,7 +365,6 @@ if forecast is not None:
         line=dict(color='#1f77b4')
     ))
     
-    # Forecast
     fig.add_trace(go.Scatter(
         x=forecast_30['ds'], 
         y=forecast_30['yhat'],
@@ -377,7 +373,6 @@ if forecast is not None:
         line=dict(color='#ff7f0e', dash='dash')
     ))
     
-    # Confidence interval (shaded area)
     fig.add_trace(go.Scatter(
         x=forecast_30['ds'].tolist() + forecast_30['ds'].tolist()[::-1],
         y=forecast_30['yhat_upper'].tolist() + forecast_30['yhat_lower'].tolist()[::-1],
@@ -397,18 +392,19 @@ if forecast is not None:
     
     st.plotly_chart(fig, width='stretch')
     
-    # Show forecast table (optional)
+    # ---------- FIXED INDENTATION HERE ----------
     with st.expander("📋 View Forecast Table"):
-    display = forecast_30.copy()
-    display['ds'] = display['ds'].dt.strftime('%Y-%m-%d')
-    display['yhat'] = display['yhat'].round(2)
-    display['yhat_lower'] = display['yhat_lower'].round(2)
-    display['yhat_upper'] = display['yhat_upper'].round(2)
-    display = display.rename(columns={
-        'ds': 'Date',
-        'yhat': 'Predicted',
-        'yhat_lower': 'Lower Bound',
-        'yhat_upper': 'Upper Bound'
-    })
-    st.dataframe(display, width='stretch')
-
+        display = forecast_30.copy()
+        display['ds'] = display['ds'].dt.strftime('%Y-%m-%d')
+        display['yhat'] = display['yhat'].round(2)
+        display['yhat_lower'] = display['yhat_lower'].round(2)
+        display['yhat_upper'] = display['yhat_upper'].round(2)
+        display = display.rename(columns={
+            'ds': 'Date',
+            'yhat': 'Predicted',
+            'yhat_lower': 'Lower Bound',
+            'yhat_upper': 'Upper Bound'
+        })
+        st.dataframe(display, width='stretch')
+else:
+    st.info("Forecast module not available. Please install Prophet.")
