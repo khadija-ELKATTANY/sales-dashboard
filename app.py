@@ -293,6 +293,75 @@ st.subheader("🏆 Top 10 Customers by Monetary Value")
 top_customers = rfm_df.nlargest(10, 'Monetary')[['Customer_ID', 'Segment', 'Monetary', 'Frequency', 'Recency']]
 st.dataframe(top_customers, use_container_width=True)
 
+
+
+# ---------- MARKET BASKET ANALYSIS (Frequently Bought Together) ----------
+st.divider()
+st.header("🛒 Frequently Bought Together")
+
+@st.cache_data
+def run_market_basket():
+    conn = sqlite3.connect(db_path)
+    query = """
+    SELECT 
+        Invoice,
+        Description
+    FROM sales
+    WHERE Description IS NOT NULL AND Description != ''
+    """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    
+    # Get top 50 products
+    top_products = df['Description'].value_counts().head(50).index.tolist()
+    df_filtered = df[df['Description'].isin(top_products)]
+    
+    # Create basket
+    basket = pd.crosstab(df_filtered['Invoice'], df_filtered['Description'])
+    basket = basket.astype(bool)
+    
+    # Run Apriori
+    from mlxtend.frequent_patterns import apriori, association_rules
+    frequent_itemsets = apriori(basket, min_support=0.02, use_colnames=True, low_memory=True)
+    
+    if len(frequent_itemsets) == 0:
+        return None
+    
+    rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=0.3)
+    rules = rules.sort_values('lift', ascending=False)
+    
+    # Format for display
+    display_rules = rules.head(10).copy()
+    display_rules['Antecedents'] = display_rules['antecedents'].apply(lambda x: ', '.join(list(x)))
+    display_rules['Consequents'] = display_rules['consequents'].apply(lambda x: ', '.join(list(x)))
+    display_rules = display_rules[['Antecedents', 'Consequents', 'support', 'confidence', 'lift']]
+    display_rules.columns = ['If You Buy', 'You Also Buy', 'Support', 'Confidence', 'Lift']
+    
+    return display_rules
+
+rules_df = run_market_basket()
+
+if rules_df is not None and not rules_df.empty:
+    st.subheader("📊 Top Product Associations")
+    st.dataframe(rules_df, use_container_width=True)
+    
+    # Highlight the strongest rule
+    best_rule = rules_df.iloc[0]
+    st.info(f"💡 **Strongest Association:** Customers who buy **'{best_rule['If You Buy']}'** are {best_rule['Lift']:.1f}x more likely to also buy **'{best_rule['You Also Buy']}'**.")
+    
+    # Support/Confidence explanation
+    with st.expander("📖 What do these numbers mean?"):
+        st.markdown("""
+        - **Support:** % of transactions that contain this item combination.
+        - **Confidence:** % of transactions containing the antecedent that also contain the consequent.
+        - **Lift:** How much more likely the consequent is purchased when the antecedent is purchased. (Lift > 1 means positive association).
+        """)
+else:
+    st.info("ℹ️ Market basket analysis requires at least 2 items per transaction. Try adjusting the minimum support threshold.")
+
+
+
+
 # ---------- SALES FORECAST (Prophet) ----------
 st.divider()
 st.header("📈 Sales Forecast (Next 30 Days)")
