@@ -282,3 +282,110 @@ st.plotly_chart(fig_rfm, width='stretch')
 st.subheader("🏆 Top 10 Customers by Monetary Value")
 top_customers = rfm_df.nlargest(10, 'Monetary')[['Customer_ID', 'Segment', 'Monetary', 'Frequency', 'Recency']]
 st.dataframe(top_customers, width='stretch')
+
+
+
+
+#------------SALES FORECAST (Prophet)------------
+st.divider()
+st.header("🔮 Sales Forecasting (Next 30 Days)")
+
+@st.cache_data
+def run_forecast():
+    """Run Prophet forecast and return data"""
+    conn = sqlite3.connect(db_path)
+    query = """
+ SELECT 
+        DATE(InvoiceDate) as ds,
+        SUM(TotalPrice) as y
+    FROM sales
+    GROUP BY DATE(InvoiceDate)
+    ORDER BY ds
+    """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    
+    df['ds'] = pd.to_datetime(df['ds'])
+    
+    try:
+        from prophet import Prophet
+        model = Prophet(
+            yearly_seasonality=True,
+            weekly_seasonality=True,
+            changepoint_prior_scale=0.05
+        )
+        model.fit(df)
+        future = model.make_future_dataframe(periods=30)
+        forecast = model.predict(future)
+        return forecast, model, df
+    except ImportError:
+        st.warning("⚠️ Prophet not installed. Forecast disabled.")
+        return None, None, None
+
+forecast, model, history = run_forecast()
+
+if forecast is not None:
+    # Extract last 30 days of forecast
+    forecast_30 = forecast.tail(30)
+    
+    # Show total predicted revenue
+    total_forecast = forecast_30['yhat'].sum()
+    col1, col2, col3 = st.columns(3)
+    col1.metric("💰 Total Predicted (30 Days)", f"${total_forecast:,.0f}")
+    col2.metric("📊 Avg Daily", f"${forecast_30['yhat'].mean():,.0f}")
+    col3.metric("📅 Forecast Period", f"{forecast_30['ds'].min().date()} to {forecast_30['ds'].max().date()}")
+    
+    # Create plot
+    import plotly.graph_objects as go
+    
+    fig = go.Figure()
+    
+    # Historical data (last 90 days)
+    hist_90 = history.tail(90)
+    fig.add_trace(go.Scatter(
+        x=hist_90['ds'], 
+        y=hist_90['y'],
+        mode='lines',
+        name='Actual Sales',
+        line=dict(color='#1f77b4')
+    ))
+    
+    # Forecast
+    fig.add_trace(go.Scatter(
+        x=forecast_30['ds'], 
+        y=forecast_30['yhat'],
+        mode='lines+markers',
+        name='Forecast',
+        line=dict(color='#ff7f0e', dash='dash')
+    ))
+    
+    # Confidence interval (shaded area)
+    fig.add_trace(go.Scatter(
+        x=forecast_30['ds'].tolist() + forecast_30['ds'].tolist()[::-1],
+        y=forecast_30['yhat_upper'].tolist() + forecast_30['yhat_lower'].tolist()[::-1],
+        fill='toself',
+        fillcolor='rgba(255, 127, 14, 0.2)',
+        line=dict(color='rgba(255, 127, 14, 0)'),
+        name='Confidence Interval'
+    ))
+    
+    fig.update_layout(
+        title='📊 30-Day Sales Forecast',
+        xaxis_title='Date',
+        yaxis_title='Sales ($)',
+        hovermode='x unified',
+        legend=dict(orientation='h', yanchor='bottom', y=1.02)
+    )
+    
+    st.plotly_chart(fig, width='stretch')
+    
+    # Show forecast table (optional)
+    with st.expander("📋 View Forecast Table"):
+        display = forecast_30.copy()
+        display['ds'] = display['ds'].dt.strftime('%Y-%m-%d')
+        display['yhat'] = display['yhat'].round(2)
+        display['yhat_lower'] = display['yhat_lower'].round(2)
+        display['yhat_upper'] = display['yhat_upper'].round(2)
+        display.columns = ['Date', 'Predicted', 'Lower Bound', 'Upper Bound']
+        st.dataframe(display, width='stretch')
+
