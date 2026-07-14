@@ -163,47 +163,66 @@ if not customers_df.empty:
     st.dataframe(customers_df, width='stretch')
 
 # ---------- KEY BUSINESS INSIGHTS ----------
+
 st.subheader("💡 Key Business Insights")
 
+# Query 1: Peak Month
 peak_query = f"""
-SELECT Monthname as Month, SUM(TotalPrice) as Revenue
-FROM sales {where_clause}
-GROUP BY Monthname
-ORDER BY Revenue DESC
-LIMIT 1
+    SELECT Monthname as Month, SUM(TotalPrice) as Revenue
+    FROM sales
+    {where_clause}
+    GROUP BY Monthname
+    ORDER BY Revenue DESC
+    LIMIT 1
 """
 peak_df = load_data(peak_query)
 
+# Query 2: UK Revenue vs Total Revenue (for the filtered set)
 uk_query = f"""
-SELECT 
-    SUM(TotalPrice) as Total_Revenue,
-    SUM(CASE WHEN Country = 'United Kingdom' THEN TotalPrice ELSE 0 END) as UK_Revenue
-FROM sales {where_clause}
+    SELECT 
+        SUM(TotalPrice) as Total_Revenue,
+        SUM(CASE WHEN Country = 'United Kingdom' THEN TotalPrice ELSE 0 END) as UK_Revenue
+    FROM sales
+    {where_clause}
 """
 uk_df = load_data(uk_query)
 
+# Query 3: Best Seller by Quantity
 seller_query = f"""
-SELECT Description, SUM(Quantity) as Total_Quantity
-FROM sales {where_clause}
-GROUP BY Description
-ORDER BY Total_Quantity DESC
-LIMIT 1
+    SELECT Description, SUM(Quantity) as Total_Quantity
+    FROM sales
+    {where_clause}
+    GROUP BY Description
+    ORDER BY Total_Quantity DESC
+    LIMIT 1
 """
 seller_df = load_data(seller_query)
 
+# Prepare values
 peak_month = peak_df['Month'].iloc[0] if not peak_df.empty else "N/A"
 peak_revenue = peak_df['Revenue'].iloc[0] if not peak_df.empty else 0
 total_rev = uk_df['Total_Revenue'].iloc[0]
 uk_rev = uk_df['UK_Revenue'].iloc[0]
 uk_pct = (uk_rev / total_rev * 100) if total_rev > 0 else 0
+
 best_seller = seller_df['Description'].iloc[0] if not seller_df.empty else "N/A"
 best_qty = seller_df['Total_Quantity'].iloc[0] if not seller_df.empty else 0
 
+# ----- FIX: Better truncation for product names -----
+# Allow up to 40 characters before truncation
+if len(best_seller) > 40:
+    best_seller_display = best_seller[:37] + "..."
+else:
+    best_seller_display = best_seller
+
+# Display metrics
 col1, col2, col3 = st.columns(3)
 col1.metric("📈 Peak Month", peak_month, f"${peak_revenue:,.0f} in sales")
 col2.metric("🇬🇧 UK Share", f"{uk_pct:.1f}%", f"of filtered revenue")
-col3.metric("🏆 Best Seller", best_seller[:25] + "..." if len(best_seller) > 50 else best_seller, f"{best_qty:,} units sold")
+col3.metric("🏆 Best Seller", best_seller_display, f"{best_qty:,} units sold")
+
 st.caption("💡 Insights automatically update when you apply filters")
+
 
 # ---------- RAW DATA ----------
 with st.expander("📋 View Raw Data"):
@@ -330,11 +349,10 @@ if forecast is not None:
     
     # Show total predicted revenue
     total_forecast = forecast_30['yhat'].sum()
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     col1.metric("💰 Total Predicted (30 Days)", f"${total_forecast:,.0f}")
     col2.metric("📊 Avg Daily", f"${forecast_30['yhat'].mean():,.0f}")
-    col3.metric("📅 Forecast Period", f"{forecast_30['ds'].min().date()} to {forecast_30['ds'].max().date()}")
-    
+    st.caption(f"📅 Forecast Period: {forecast_30['ds'].min().date()} to {forecast_30['ds'].max().date()}")
     # Create plot
     import plotly.graph_objects as go
     
@@ -381,11 +399,16 @@ if forecast is not None:
     
     # Show forecast table (optional)
     with st.expander("📋 View Forecast Table"):
-        display = forecast_30.copy()
-        display['ds'] = display['ds'].dt.strftime('%Y-%m-%d')
-        display['yhat'] = display['yhat'].round(2)
-        display['yhat_lower'] = display['yhat_lower'].round(2)
-        display['yhat_upper'] = display['yhat_upper'].round(2)
-        display.columns = ['Date', 'Predicted', 'Lower Bound', 'Upper Bound']
-        st.dataframe(display, width='stretch')
+    display = forecast_30.copy()
+    display['ds'] = display['ds'].dt.strftime('%Y-%m-%d')
+    display['yhat'] = display['yhat'].round(2)
+    display['yhat_lower'] = display['yhat_lower'].round(2)
+    display['yhat_upper'] = display['yhat_upper'].round(2)
+    display = display.rename(columns={
+        'ds': 'Date',
+        'yhat': 'Predicted',
+        'yhat_lower': 'Lower Bound',
+        'yhat_upper': 'Upper Bound'
+    })
+    st.dataframe(display, width='stretch')
 
