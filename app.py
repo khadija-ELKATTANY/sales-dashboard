@@ -293,7 +293,38 @@ st.subheader("🏆 Top 10 Customers by Monetary Value")
 top_customers = rfm_df.nlargest(10, 'Monetary')[['Customer_ID', 'Segment', 'Monetary', 'Frequency', 'Recency']]
 st.dataframe(top_customers, use_container_width=True)
 
+# ---------- CHURN PREDICTION (ML) ----------
+st.divider()
+st.header("⚠️ Customer Churn Risk")
 
+@st.cache_data
+def load_churn_predictions():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    churn_path = os.path.join(script_dir, 'churn_predictions.csv')
+    
+    if os.path.exists(churn_path):
+        df = pd.read_csv(churn_path)
+        return df
+    else:
+        return None
+
+churn_df = load_churn_predictions()
+
+if churn_df is not None:
+    # Show high-level metrics
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🔴 High Risk", len(churn_df[churn_df['Risk_Level'] == '🔴 High Risk']))
+    col2.metric("🟡 Medium Risk", len(churn_df[churn_df['Risk_Level'] == '🟡 Medium Risk']))
+    col3.metric("🟢 Low Risk", len(churn_df[churn_df['Risk_Level'] == '🟢 Low Risk']))
+    
+    # Show the top at-risk customers
+    st.subheader("🚨 Top 10 Customers at Risk of Churn")
+    at_risk = churn_df.nlargest(10, 'Churn_Probability')[['Customer_ID', 'Recency', 'Frequency', 'Monetary', 'Risk_Level']]
+    st.dataframe(at_risk, use_container_width=True)
+    
+    st.caption("🤖 Model trained using Random Forest. Feature importance: Recency, Frequency, Monetary. Note: High Risk means customer hasn't purchased in a while.")
+else:
+    st.info("ℹ️ Churn prediction model not yet trained. Run 'churn_prediction.py' locally to generate predictions.")
 
 # ---------- MARKET BASKET ANALYSIS (Frequently Bought Together) ----------
 st.divider()
